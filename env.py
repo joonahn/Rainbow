@@ -35,7 +35,7 @@ class Env():
         state = state.squeeze(0)
         state = state[-1]
         # state = cv2.resize(self.ale.getScreenGrayscale(), (84, 84), interpolation=cv2.INTER_LINEAR)
-        return state
+        return state.div_(255)
         # return torch.tensor(state, dtype=torch.float32, device=self.device).div_(255)
 
     def _reset_buffer(self):
