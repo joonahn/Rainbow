@@ -60,7 +60,7 @@ class Agent():
 
     def learn(self, mem):
         # Sample transitions
-        idxs, states, actions, returns, next_states, nonterminals, weights = mem.sample(self.batch_size)
+        idxs, states, actions, returns, next_states, nonterminals, weights, data_idxs = mem.sample(self.batch_size)
 
         # Calculate current state probabilities (online network noise already sampled)
         log_ps = self.online_net(states, log=True)  # Log probabilities log p(s_t, ·; θonline)
@@ -97,7 +97,8 @@ class Agent():
         clip_grad_norm_(self.online_net.parameters(), self.norm_clip)  # Clip gradients by L2 norm
         self.optimiser.step()
 
-        mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
+        # mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
+        return data_idxs
 
     def update_target_net(self):
         self.target_net.load_state_dict(self.online_net.state_dict())

@@ -4,8 +4,9 @@ import numpy as np
 import torch
 
 
-Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (84, 84)), ('action', np.int32), ('reward', np.float32), ('nonterminal', np.bool_)])
-blank_trans = (0, np.zeros((84, 84), dtype=np.uint8), 0, 0.0, False)
+Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (84, 84)), ('action', np.int32), ('reward', np.float32),
+ ('nonterminal', np.bool_), ('epi_id', np.int32), ('epi_reward', np.float32)])
+blank_trans = (0, np.zeros((84, 84), dtype=np.uint8), 0, 0.0, False, -1, 0.0)
 
 
 # Segment tree data structure where parent node values are sum/max of children node values
@@ -18,6 +19,7 @@ class SegmentTree():
         self.sum_tree = np.zeros((self.tree_start + self.size,), dtype=np.float32)
         self.data = np.array([blank_trans] * size, dtype=Transition_dtype)  # Build structured array
         self.max = 1  # Initial max value to return (1 = 1^ω)
+        self.min_epi_reward = 0.0
 
     # Updates nodes values from current tree
     def _update_nodes(self, indices):
@@ -46,6 +48,29 @@ class SegmentTree():
         self._propagate(indices)  # Propagate values
         current_max_value = np.max(values)
         self.max = max(current_max_value, self.max)
+
+    # Updates values given tree indices
+    def update_reward(self, epi_id, epi_reward):
+        # if target epi_id does not exists, return
+        if self.data[self.data['epi_id'] == epi_id].size == 0:
+            return
+        self.min_epi_reward = min(self.min_epi_reward, epi_reward)
+        delta_epi_reward = epi_reward - self.data[self.data['epi_id'] == epi_id]['epi_reward'][0]
+        value = max(0.1, delta_epi_reward) #TODO: lower bound of epi reward is a hyperparam! 
+        self.data[self.data['epi_id'] == epi_id]['epi_reward'] = epi_reward
+
+        for index in np.arange(self.data.size)[self.data['epi_id'] == epi_id]:
+            self._update_index(index + self.tree_start, value)
+
+    # Updates values given tree indices
+    def update_reward_by_index(self, data_index, epi_reward):
+        # if target epi_id does not exists, return
+        self.min_epi_reward = min(self.min_epi_reward, epi_reward)
+        delta_epi_reward = epi_reward - self.data[data_index]['epi_reward']
+        value = max(0.1, delta_epi_reward) #TODO: lower bound of epi reward is a hyperparam! 
+
+        self.data[data_index]['epi_reward'] = epi_reward
+        self._update_index(data_index + self.tree_start, value)
 
     # Updates single value given a tree index for efficiency
     def _update_index(self, index, value):
@@ -98,9 +123,9 @@ class ReplayMemory():
         self.transitions = SegmentTree(capacity)  # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
 
     # Adds state and action at time t, reward and terminal at time t + 1
-    def append(self, state, action, reward, terminal):
+    def append(self, state, action, reward, terminal, epi_id):
         state = state[-1].mul(255).to(dtype=torch.uint8, device=torch.device('cpu'))  # Only store last frame and discretise to save memory
-        self.transitions.append((self.t, state, action, reward, not terminal), self.transitions.max)  # Store new transition with maximum priority
+        self.transitions.append((self.t, state, action, reward, not terminal, epi_id, self.transitions.min_epi_reward), self.transitions.max)  # Store new transition with maximum priority
         self.t = 0 if terminal else self.t + 1  # Start new episodes with t = 0
 
     # Returns the transitions with blank states where appropriate
@@ -148,7 +173,7 @@ class ReplayMemory():
         capacity = self.capacity if self.transitions.full else self.transitions.index
         weights = (capacity * probs) ** -self.priority_weight  # Compute importance-sampling weights w
         weights = torch.tensor(weights / weights.max(), dtype=torch.float32, device=self.device)  # Normalise by max importance-sampling weight from batch
-        return tree_idxs, states, actions, returns, next_states, nonterminals, weights
+        return tree_idxs, states, actions, returns, next_states, nonterminals, weights, idxs
 
     def update_priorities(self, idxs, priorities):
         priorities = np.power(priorities, self.priority_exponent)
@@ -172,5 +197,13 @@ class ReplayMemory():
         state = torch.tensor(transitions['state'], dtype=torch.float32, device=self.device).div_(255)  # Agent will turn into batch
         self.current_idx += 1
         return state
+
+    def update_reward(self, epi_id, epi_reward):
+        self.transitions.update_reward(epi_id, epi_reward)
+
+    def update_reward_by_indices(self, data_indices, epi_reward):
+        for data_index in data_indices:
+            self.transitions.update_reward_by_index(data_index, epi_reward)
+
 
     next = __next__  # Alias __next__ for Python 2 compatibility

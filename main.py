@@ -133,7 +133,7 @@ while T < args.evaluation_size:
         state, done = env.reset(), False
 
     next_state, _, done = env.step(np.random.randint(0, action_space))
-    val_mem.append(state, -1, 0.0, done)
+    val_mem.append(state, -1, 0.0, done, -1)
     state = next_state
     T += 1
 
@@ -144,10 +144,12 @@ if args.evaluate:
 else:
     # Training loop
     dqn.train()
-    T, done = 0, True
+    T, done, epi_id, epi_reward, epi_transition = 0, True, 0, 0.0, []
     for T in trange(1, args.T_max + 1):
         if done:
-            state, done = env.reset(), False
+            mem.update_reward(epi_id, epi_reward)
+            mem.update_reward_by_indices(epi_transition, epi_reward)
+            state, done, epi_id, epi_reward, epi_transition = env.reset(), False, epi_id + 1, 0.0, []
 
         if T % args.replay_frequency == 0:
             dqn.reset_noise()  # Draw a new set of noisy weights
@@ -156,14 +158,16 @@ else:
         next_state, reward, done = env.step(action)  # Step
         if args.reward_clip > 0:
             reward = max(min(reward, args.reward_clip), -args.reward_clip)  # Clip rewards
-        mem.append(state, action, reward, done)  # Append transition to memory
+        mem.append(state, action, reward, done, epi_id)  # Append transition to memory
+        epi_reward += reward
 
         # Train and test
         if T >= args.learn_start:
             mem.priority_weight = min(mem.priority_weight + priority_weight_increase, 1)  # Anneal importance sampling weight β to 1
 
             if T % args.replay_frequency == 0:
-                dqn.learn(mem)  # Train with n-step distributional double-Q learning
+                data_idxs = dqn.learn(mem)  # Train with n-step distributional double-Q learning
+                epi_transition.extend(data_idxs)
 
             if T % args.evaluation_interval == 0:
                 dqn.eval()  # Set DQN (online network) to evaluation mode
