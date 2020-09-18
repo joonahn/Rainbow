@@ -61,7 +61,6 @@ class PointNetfeat(nn.Module):
 
     def forward(self, x):
         n_pts = x.size()[2]
-        print(x.dtype)
         x = F.relu(self.bn1(self.conv1(x)))
 
         trans_feat = None
