@@ -12,6 +12,7 @@ import torch
 from tqdm import trange
 
 from agent import Agent
+from pointnet import TransitionEvaluator
 from env import Env
 from memory import ReplayMemory
 from test import test
@@ -110,6 +111,9 @@ action_space = env.action_space()
 # Agent
 dqn = Agent(args, env)
 
+# pointnet
+tran_eval = TransitionEvaluator(args)
+
 # If a model is provided, and evaluate is fale, presumably we want to resume, so try to load memory
 if args.model is not None and not args.evaluate:
     if not args.memory:
@@ -145,10 +149,17 @@ else:
     # Training loop
     dqn.train()
     T, done, epi_id, epi_reward, epi_transition = 0, True, 0, 0.0, []
+    prev_epi_reward = None
     for T in trange(1, args.T_max + 1):
         if done:
-            mem.update_reward(epi_id, epi_reward)
-            mem.update_reward_by_indices(epi_transition, epi_reward)
+            # train pointnet
+            if not prev_epi_reward:
+                prev_epi_reward = epi_reward
+            else:
+                delta_reward = epi_reward - prev_epi_reward
+                tran_eval.learn(epi_transition, delta_reward, mem)
+                tran_eval.update_mem_priority(epi_transition, mem)
+            prev_epi_reward = epi_reward
             state, done, epi_id, epi_reward, epi_transition = env.reset(), False, epi_id + 1, 0.0, []
 
         if T % args.replay_frequency == 0:

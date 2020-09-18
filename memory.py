@@ -72,6 +72,11 @@ class SegmentTree():
         self.data[data_index]['epi_reward'] = epi_reward
         self._update_index(data_index + self.tree_start, value)
 
+    # Updates values given tree indices
+    def update_value_by_index(self, data_index, value):
+        # if target epi_id does not exists, return
+        self._update_index(data_index + self.tree_start, value)
+
     # Updates single value given a tree index for efficiency
     def _update_index(self, index, value):
         self.sum_tree[index] = value  # Set new value
@@ -179,6 +184,16 @@ class ReplayMemory():
         priorities = np.power(priorities, self.priority_exponent)
         self.transitions.update(idxs, priorities)
 
+    def get_sample_by_indices(self, idxs, set_size=32):
+        data = self._get_transitions(idxs)
+        data = data[:data.size // set_size * set_size]
+        states = torch.tensor(data['state'][:,self.history], dtype=torch.float32, device=self.device).div_(255).view(-1, set_size, 7056) # 84*84
+        states = states.permute(0, 2, 1)
+        actions = torch.tensor(np.copy(data['action'][:, self.history - 1]), dtype=torch.float32, device=self.device).view(-1, 1, set_size)
+        rewards = torch.tensor(np.copy(data['reward'][:, self.history - 1:-1]), dtype=torch.float32, device=self.device)
+        rewards = torch.matmul(rewards, self.n_step_scaling).view(-1, 1, set_size)
+        return states, actions, rewards
+
     # Set up internal state for iterator
     def __iter__(self):
         self.current_idx = 0
@@ -204,6 +219,10 @@ class ReplayMemory():
     def update_reward_by_indices(self, data_indices, epi_reward):
         for data_index in data_indices:
             self.transitions.update_reward_by_index(data_index, epi_reward)
+
+    def update_value_by_indices(self, data_indices, value):
+        for data_index in data_indices:
+            self.transitions.update_reward_by_index(data_index, value)
 
 
     next = __next__  # Alias __next__ for Python 2 compatibility
