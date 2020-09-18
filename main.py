@@ -58,6 +58,7 @@ parser.add_argument('--enable-cudnn', action='store_true', help='Enable cuDNN (f
 parser.add_argument('--checkpoint-interval', default=0, help='How often to checkpoint the model, defaults to 0 (never checkpoint)')
 parser.add_argument('--memory', help='Path to save/load the memory from')
 parser.add_argument('--disable-bzip-memory', action='store_true', help='Don\'t zip the memory file. Not recommended (zipping is a bit slower and much, much smaller)')
+parser.add_argument('--priority-activation', type=str, default='exponential', choices=['exponential', 'sigmoid'], help='Activation function used to calculate priority')
 
 # Setup
 args = parser.parse_args()
@@ -184,7 +185,7 @@ else:
                 dqn.eval()  # Set DQN (online network) to evaluation mode
                 avg_reward, avg_Q = test(args, T, dqn, val_mem, metrics, results_dir)  # Test
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' | Avg. reward: ' + str(avg_reward) + ' | Avg. Q: ' + str(avg_Q))
-                wandb.log({"step": T, "reward": avg_reward})
+                wandb.log({"step": T, "reward": avg_reward, "avg_q": avg_Q})
                 dqn.train()  # Set DQN (online network) back to training mode
 
                 # If memory path provided, save it

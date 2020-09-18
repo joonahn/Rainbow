@@ -16,14 +16,15 @@ class TransitionEvaluator:
         self.history = args.history_length
         self.discount = args.discount
         self.n = args.multi_step
+        self.priority_activation = args.priority_activation
         self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32)  # Discount-scaling vector for n-step returns
 
     def learn(self, epi_transitions, delta_reward, mem):
         if len(epi_transitions) < self.batch_size:
             print("cannot learn because of short epi_transition length!", len(epi_transitions))
             return None
-        else:
-            print("else, length:", len(epi_transitions))
+        # else:
+        #     print("else, length:", len(epi_transitions))
         states, actions, rewards = mem.get_sample_by_indices(np.array(epi_transitions))
         self.pointnet.train()
         self.optimizer.zero_grad()
@@ -39,12 +40,18 @@ class TransitionEvaluator:
         if len(epi_transitions) < self.batch_size:
             print("cannot learn because of short epi_transition length!", len(epi_transitions))
             return None
+        self.pointnet.eval()
         states, actions, rewards = mem.get_sample_by_indices(np.array(epi_transitions))
         data = torch.cat([states, actions, rewards], 1)
         data = data.view(-1, 7058, 32)
         predict = self.pointnet(data)
         for i in range(data.size()[0]):
-            mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], nn.Sigmoid()(predict[i]))
+            if self.priority_activation == 'sigmoid':
+                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], nn.Sigmoid()(predict[i]))
+            elif self.priority_activation == 'exponential':
+                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], torch.exp(predict[i]))
+            else:
+                raise Exception("wrong priority activation: " + self.priority_activation)
 
 
 class PointNetfeat(nn.Module):
