@@ -16,10 +16,15 @@ class TransitionEvaluator:
         self.history = args.history_length
         self.discount = args.discount
         self.n = args.multi_step
+        self.cnt = 0
         self.priority_activation = args.priority_activation
         self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32)  # Discount-scaling vector for n-step returns
 
     def learn(self, epi_transitions, delta_reward, mem):
+        self.cnt += 1
+        if self.cnt > 16:
+            self.scheduler.step()
+            self.cnt = 0
         if len(epi_transitions) < self.batch_size:
             print("cannot learn because of short epi_transition length!", len(epi_transitions))
             return None
@@ -34,7 +39,8 @@ class TransitionEvaluator:
         loss = F.mse_loss(predict, torch.tensor(delta_reward, dtype=torch.float32, device=self.device).repeat(*predict.shape))
         loss.backward()
         self.optimizer.step()
-        return loss.item()
+        del states, actions, rewards, data
+        torch.cuda.empty_cache()
 
     def update_mem_priority(self, epi_transitions, mem):
         if len(epi_transitions) < self.batch_size:
@@ -44,15 +50,16 @@ class TransitionEvaluator:
         states, actions, rewards = mem.get_sample_by_indices(np.array(epi_transitions))
         data = torch.cat([states, actions, rewards], 1)
         data = data.view(-1, 7058, 32)
-        predict = self.pointnet(data)
+        predict = self.pointnet(data).detach().cpu().numpy()
         for i in range(data.size()[0]):
             if self.priority_activation == 'sigmoid':
-                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], nn.Sigmoid()(predict[i]))
+                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], 1 / (1 + np.exp(-predict[i])))
             elif self.priority_activation == 'exponential':
-                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], torch.exp(predict[i]))
+                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], np.exp(predict[i]))
             else:
                 raise Exception("wrong priority activation: " + self.priority_activation)
-
+        del states, actions, rewards, data
+        torch.cuda.empty_cache()
 
 class PointNetfeat(nn.Module):
     def __init__(self, global_feat = True, feature_transform = False):
