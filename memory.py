@@ -107,7 +107,8 @@ class SegmentTree():
         if (~update_targets).all():
             return indices
         children_indices = (indices * 2 + np.expand_dims([1, 2], axis=1)) # Make matrix of children indices
-        left_children_values = self.sum_tree[children_indices[0]]
+        left_children_values = values.copy()
+        left_children_values[update_targets] = self.sum_tree[children_indices[0][update_targets]]
         successor_choices = np.greater(values, left_children_values).astype(np.int32)  # Classify which values are in left or right branches
         successor_indices = indices.copy()
         successor_indices[update_targets] = children_indices[successor_choices, np.arange(indices.size)][update_targets] # Use classification to index into the indices matrix
