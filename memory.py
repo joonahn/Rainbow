@@ -101,9 +101,42 @@ class SegmentTree():
         successor_values = values - successor_choices * left_children_values  # Subtract the left branch values when searching in the right branch
         return self._retrieve(successor_indices, successor_values)
 
+    # Searches for the location of values in sum tree
+    def _retrieve_mod(self, indices, values):
+        update_targets = (indices < self.sum_tree.shape[0])
+        if (~update_targets).all():
+            return indices
+        children_indices = (indices * 2 + np.expand_dims([1, 2], axis=1)) # Make matrix of children indices
+        left_children_values = self.sum_tree[children_indices[0]]
+        successor_choices = np.greater(values, left_children_values).astype(np.int32)  # Classify which values are in left or right branches
+        successor_indices = indices.copy()
+        successor_indices[update_targets] = children_indices[successor_choices, np.arange(indices.size)][update_targets] # Use classification to index into the indices matrix
+        successor_values = values - successor_choices * left_children_values * update_targets.astype(np.int32)  # Subtract the left branch values when searching in the right branch
+        return self._retrieve(successor_indices, successor_values)
+
+    # Searches for the location of values in sum tree
+    def _retrieve_one_by_one(self, indices, values):
+        children_indices = (indices * 2 + np.expand_dims([1, 2], axis=1)) # Make matrix of children indices
+        if indices[0] >= self.tree_start:
+            return indices
+        left_children_values = self.sum_tree[children_indices[0]]
+        successor_choices = np.greater(values, left_children_values).astype(np.int32)  # Classify which values are in left or right branches
+        successor_indices = children_indices[successor_choices, np.arange(indices.size)] # Use classification to index into the indices matrix
+        successor_values = values - successor_choices * left_children_values  # Subtract the left branch values when searching in the right branch
+        return self._retrieve_one_by_one(successor_indices, successor_values)
+
     # Searches for values in sum tree and returns values, data indices and tree indices
     def find(self, values):
-        indices = self._retrieve(np.zeros(values.shape, dtype=np.int32), values)
+        indices = self._retrieve_mod(np.zeros(values.shape, dtype=np.int32), values)
+        data_index = indices - self.tree_start
+        return (self.sum_tree[indices], data_index, indices)  # Return values, data indices, tree indices
+
+    def find_one_by_one(self, values):
+        indices = []
+        for value in values:
+            index = self._retrieve_one_by_one(np.zeros([1], dtype=np.int32), np.array([value]))
+            indices.append(index[0])
+        indices = np.array(indices)
         data_index = indices - self.tree_start
         return (self.sum_tree[indices], data_index, indices)  # Return values, data indices, tree indices
 
