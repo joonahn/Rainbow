@@ -216,17 +216,16 @@ class ReplayMemory():
 
     def update_priorities(self, idxs, priorities):
         priorities = np.power(priorities, self.priority_exponent)
-        self.transitions.update(idxs, priorities)
+        self.transitions.update(idxs, priorities) # sum_tree index
 
-    def get_sample_by_indices(self, idxs, set_size=32):
+    def get_sample_by_indices(self, idxs):
         data = self._get_transitions(idxs)
-        data = data[:data.size // set_size * set_size]
-        states = torch.tensor(data['state'][:,self.history], dtype=torch.float32, device=self.device).div_(255).view(-1, set_size, 7056) # 84*84
-        states = states.permute(0, 2, 1)
-        actions = torch.tensor(np.copy(data['action'][:, self.history - 1]), dtype=torch.float32, device=self.device).view(-1, 1, set_size)
+        states = torch.tensor(data['state'][:,:self.history], dtype=torch.float32, device=self.device).div_(255).view(-1, 4, 84, 84) # 84*84
+        next_states = torch.tensor(data['state'][:, self.n:self.n + self.history], device=self.device, dtype=torch.float32).div_(255).view(-1, 4, 84, 84) # 84*84
+        actions = torch.tensor(np.copy(data['action'][:, self.history - 1]), dtype=torch.float32, device=self.device).view(-1, 1)
         rewards = torch.tensor(np.copy(data['reward'][:, self.history - 1:-1]), dtype=torch.float32, device=self.device)
-        rewards = torch.matmul(rewards, self.n_step_scaling).view(-1, 1, set_size)
-        return states, actions, rewards
+        rewards = torch.matmul(rewards, self.n_step_scaling).view(-1, 1)
+        return states, actions, rewards, next_states
 
     # Set up internal state for iterator
     def __iter__(self):
