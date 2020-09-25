@@ -158,7 +158,10 @@ else:
                 prev_epi_reward = epi_reward
             else:
                 delta_reward = epi_reward - prev_epi_reward
-                selected_epi_transition = np.random.choice(epi_transition, 4096)
+                if len(epi_transition) > 4096:
+                    selected_epi_transition = np.random.choice(epi_transition, 4096)
+                else:
+                    selected_epi_transition = epi_transition
                 tran_eval.learn(selected_epi_transition, delta_reward, mem)
                 tran_eval.update_mem_priority(selected_epi_transition, mem)
             prev_epi_reward = epi_reward
