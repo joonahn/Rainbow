@@ -19,7 +19,6 @@ class TransitionEvaluator:
         self.history = args.history_length
         self.discount = args.discount
         self.n = args.multi_step
-        self.priority_activation = args.priority_activation
         self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32)  # Discount-scaling vector for n-step returns
 
     def learn(self, epi_transitions, delta_reward, mem):
@@ -30,17 +29,18 @@ class TransitionEvaluator:
         selected_transitions = np.random.choice(epi_transitions, self.ners_update_sample_size)
         states, actions, rewards, next_states = mem.get_sample_by_indices(np.array(selected_transitions))
         with torch.no_grad():
-            td_error = rewards + self.discount * self.agent.target_net(next_states).sum(2).max(1)\
-                - self.agent.online_net(states).sum(2)[:, actions]
-            q_val = rewards + self.discount * self.agent.target_net(states).sum(2).max(1)
-        states = states[:, -1]
-        next_states = next_states[: -1]
+            td_error = rewards + self.discount * self.agent.target_net(next_states).sum(2).max(1, keepdim=True)[0]\
+                - torch.gather(self.agent.online_net(states).sum(2), 1, actions.long())
+            q_val = rewards + self.discount * self.agent.target_net(states).sum(2).max(1, keepdim=True)[0]
+        states = states[:, -1].view(-1, 7056)
+        next_states = next_states[:, -1].view(-1, 7056)
         self.optimizer.zero_grad()
         data = torch.cat([states, actions, rewards, next_states, td_error, q_val], 1)
         data = data.view(-1, 14116)
         # REINFORCE algorithm
         _, _, predict = self.ners(data)
         loss = (-predict.log() * delta_reward).sum()
+        print(loss)
         loss.backward()
         self.optimizer.step()
         del states, actions, rewards, next_states, td_error, q_val, data
@@ -56,7 +56,7 @@ class TransitionEvaluator:
             # rewards: (32, 1)
             # target_net: [32] -> max는 이상한 객체를 return 하므로 [0]으로 값만 추출해야함
             # online_net: [32, 1] -> how to select action??
-            # print("rewards:", rewards.shape) 
+            # print("rewards:", rewards.shape)
             # print("target_net:", self.agent.target_net(next_states).sum(2).max(1, keepdim=True)[0].shape)
             # print("online_net:", torch.gather(self.agent.online_net(states).sum(2), 1, actions.long()))
             td_error = rewards + self.discount * self.agent.target_net(next_states).sum(2).max(1, keepdim=True)[0]\
@@ -67,12 +67,11 @@ class TransitionEvaluator:
         self.optimizer.zero_grad()
         data = torch.cat([states, actions, rewards, next_states, td_error, q_val], 1)
         data = data.view(-1, 14116)
-        # REINFORCE algorithm
         with torch.no_grad():
             priorities, _, _ = self.ners(data)
             priorities = priorities.cpu().numpy()[:, 0]
-            print(priorities.shape)
-        mem.update_value_by_indices(epi_transitions, priorities)
+        mem.update_values_by_indices(epi_transitions, priorities)
+        print("priorities:", priorities.tolist())
         del states, actions, rewards, next_states, td_error, q_val, data
         torch.cuda.empty_cache()
 
@@ -112,18 +111,28 @@ class NERS(nn.Module):
           nn.Linear(128, 64),
           nn.ReLU(),
           nn.Linear(64, 1),
-          nn.ReLU(),
+        #   nn.ReLU()
         )
+
+        def init_weights(m):
+            if type(m) == nn.Linear:
+                torch.nn.init.kaiming_uniform(m.weight)
+
+        self.local_net.apply(init_weights)
+        self.global_net.apply(init_weights)
+        self.score_net.apply(init_weights)
 
     def forward(self, x):
         # input: D(I)
         local_feat = self.local_net(x)
         global_feat = torch.mean(self.global_net(x), 0).repeat(local_feat.shape[0], 1)
         concat_feat = torch.cat((local_feat, global_feat), 1)
+        print(concat_feat)
         logits = self.score_net(concat_feat)
         print(logits)
         logits = logits ** self.alpha
+        print(logits)
+        exit()
         priorities = logits / (torch.sum(logits) + 1e-4)
         weights = (1/(priorities * priorities.shape[0])) ** self.beta
         return priorities, weights, logits
-        
