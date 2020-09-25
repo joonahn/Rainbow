@@ -158,8 +158,9 @@ else:
                 prev_epi_reward = epi_reward
             else:
                 delta_reward = epi_reward - prev_epi_reward
-                tran_eval.learn(epi_transition, delta_reward, mem)
-                tran_eval.update_mem_priority(epi_transition, mem)
+                selected_epi_transition = np.random.choice(epi_transition, 4096)
+                tran_eval.learn(selected_epi_transition, delta_reward, mem)
+                tran_eval.update_mem_priority(selected_epi_transition, mem)
             prev_epi_reward = epi_reward
             state, done, epi_id, epi_reward, epi_transition = env.reset(), False, epi_id + 1, 0.0, []
 
