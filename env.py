@@ -29,11 +29,13 @@ class Env():
 
     def _get_state(self, state):
         # input state: numpy (160, 120, 3)
-        state = torch.tensor(np.transpose(state, (2, 0, 1)), dtype=torch.float32, device=self.device)
+        state = state[:,:,-1]
+        state = torch.tensor(state, dtype=torch.float32, device=self.device)
+        state = state.unsqueeze(0)
         state = state.unsqueeze(0)
         state = torch.nn.functional.interpolate(state, size=(84, 84))
         state = state.squeeze(0)
-        state = state[-1]
+        state = state.squeeze(0)
         # state = cv2.resize(self.ale.getScreenGrayscale(), (84, 84), interpolation=cv2.INTER_LINEAR)
         return state.div_(255)
         # return torch.tensor(state, dtype=torch.float32, device=self.device).div_(255)
