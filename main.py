@@ -169,7 +169,7 @@ else:
                 dqn.eval()  # Set DQN (online network) to evaluation mode
                 avg_reward, avg_Q = test(args, T, dqn, val_mem, metrics, results_dir)  # Test
                 log('T = ' + str(T) + ' / ' + str(args.T_max) + ' | Avg. reward: ' + str(avg_reward) + ' | Avg. Q: ' + str(avg_Q))
-                wandb.log({"step": T, "reward": avg_reward})
+                wandb.log({"step": T, "reward": avg_reward, "avg_q": avg_Q})
                 dqn.train()  # Set DQN (online network) back to training mode
 
                 # If memory path provided, save it
