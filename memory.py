@@ -103,7 +103,7 @@ class SegmentTree():
 
     # Searches for the location of values in sum tree
     def _retrieve_mod(self, indices, values):
-        update_targets = (indices < self.sum_tree.shape[0])
+        update_targets = (indices < self.tree_start)
         if (~update_targets).all():
             return indices
         children_indices = (indices * 2 + np.expand_dims([1, 2], axis=1)) # Make matrix of children indices
@@ -113,7 +113,7 @@ class SegmentTree():
         successor_indices = indices.copy()
         successor_indices[update_targets] = children_indices[successor_choices, np.arange(indices.size)][update_targets] # Use classification to index into the indices matrix
         successor_values = values - successor_choices * left_children_values * update_targets.astype(np.int32)  # Subtract the left branch values when searching in the right branch
-        return self._retrieve(successor_indices, successor_values)
+        return self._retrieve_mod(successor_indices, successor_values)
 
     # Searches for the location of values in sum tree
     def _retrieve_one_by_one(self, indices, values):
