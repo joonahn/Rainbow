@@ -177,6 +177,7 @@ class ReplayMemory():
         self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32, device=self.device)  # Discount-scaling vector for n-step returns
         self.transitions = SegmentTree(capacity)  # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
         self.buffer = collections.deque()
+        self.current_idx = 0
 
     def append(self, state, action, reward, terminal):
         self.buffer.append((state, action, reward, terminal))
@@ -268,7 +269,7 @@ class ReplayMemory():
         for t in reversed(range(self.history - 1)):
             blank_mask[t] = np.logical_or(blank_mask[t + 1], transitions_firsts[t + 1]) # If future frame has timestep 0
         transitions[blank_mask] = blank_trans
-        state = torch.tensor(transitions['state'], dtype=torch.float32, device=self.device).div_(255)  # Agent will turn into batch
+        state = torch.tensor(transitions['state'][:, self.history], dtype=torch.float32, device=self.device).div_(255)  # Agent will turn into batch
         self.current_idx += 1
         return state
 
