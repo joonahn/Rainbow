@@ -2,11 +2,12 @@
 from __future__ import division
 import numpy as np
 import torch
+import collections
 
 
-Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (84, 84)), ('action', np.int32), ('reward', np.float32),
- ('nonterminal', np.bool_), ('epi_id', np.int32), ('epi_reward', np.float32)])
-blank_trans = (0, np.zeros((84, 84), dtype=np.uint8), 0, 0.0, False, -1, 0.0)
+Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (7, 84, 84)), ('action', np.int32, (7,)), ('reward', np.float32, (7,)),
+ ('nonterminal', np.bool_, (7,))])
+blank_trans = (0, np.zeros((84, 84), dtype=np.uint8), np.zeros((7,), dtype=np.uint8), np.zeros((7,), dtype=np.float32), np.zeros((7,), dtype=np.bool_))
 
 
 # Segment tree data structure where parent node values are sum/max of children node values
@@ -148,6 +149,21 @@ class SegmentTree():
     def total(self):
         return self.sum_tree[0]
 
+    def evict_by_indices(self, indices):
+        for index in indices: # tree-index
+            data_index = index - self.tree_start
+            self.index = (self.index - 1) % self.size # data-index
+            self.data[data_index % self.size] = self.data[self.index]
+            self.data[self.index] = blank_trans
+            self._update_index(index, self.sum_tree[self.index + self.tree_start])
+            self._update_index(self.index + self.tree_start, 0.0)
+
+    def evict(self, count):
+        value = self.sum_tree[self.tree_start:]
+        value[value == 0.0] = np.inf
+        evict_targets = np.argsort(value)[:count] + self.tree_start
+        self.evict_by_indices(evict_targets)
+
 class ReplayMemory():
     def __init__(self, args, capacity):
         self.device = args.device
@@ -160,23 +176,29 @@ class ReplayMemory():
         self.t = 0  # Internal episode timestep counter
         self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32, device=self.device)  # Discount-scaling vector for n-step returns
         self.transitions = SegmentTree(capacity)  # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
+        self.buffer = collections.deque()
 
-    # Adds state and action at time t, reward and terminal at time t + 1
-    def append(self, state, action, reward, terminal, epi_id):
-        state = state[-1].mul(255).to(dtype=torch.uint8, device=torch.device('cpu'))  # Only store last frame and discretise to save memory
-        self.transitions.append((self.t, state, action, reward, not terminal, epi_id, self.transitions.min_epi_reward), self.transitions.max)  # Store new transition with maximum priority
-        self.t = 0 if terminal else self.t + 1  # Start new episodes with t = 0
+    def append(self, state, action, reward, terminal):
+        self.buffer.append((state, action, reward, terminal))
+        if len(self.buffer) >= 7:
+            states = np.array([v[0][-1].mul(255).to(dtype=torch.uint8, device=torch.device('cpu')).numpy() for v in self.buffer])
+            actions = np.array([v[1] for v in self.buffer])
+            rewards = np.array([v[2] for v in self.buffer])
+            terminals = np.array([v[3] for v in self.buffer])
+            self.transitions.append((self.t, states, actions, rewards, ~ terminals), self.transitions.max)  # Store new transition with maximum priority
+            self.t = 0 if terminals[3] else self.t + 1  # Start new episodes with t = 0
+            self.buffer.popleft()
 
     # Returns the transitions with blank states where appropriate
     def _get_transitions(self, idxs):
-        transition_idxs = np.arange(-self.history + 1, self.n + 1) + np.expand_dims(idxs, axis=1)
+        transition_idxs = idxs
         transitions = self.transitions.get(transition_idxs)
         transitions_firsts = transitions['timestep'] == 0
         blank_mask = np.zeros_like(transitions_firsts, dtype=np.bool_)
         for t in range(self.history - 2, -1, -1):  # e.g. 2 1 0
-            blank_mask[:, t] = np.logical_or(blank_mask[:, t + 1], transitions_firsts[:, t + 1]) # True if future frame has timestep 0
+            blank_mask[t] = np.logical_or(blank_mask[t + 1], transitions_firsts[t + 1]) # True if future frame has timestep 0
         for t in range(self.history, self.history + self.n):  # e.g. 4 5 6
-            blank_mask[:, t] = np.logical_or(blank_mask[:, t - 1], transitions_firsts[:, t]) # True if current or past frame has timestep 0
+            blank_mask[t] = np.logical_or(blank_mask[t - 1], transitions_firsts[t]) # True if current or past frame has timestep 0
         transitions[blank_mask] = blank_trans
         return transitions
 
@@ -221,12 +243,15 @@ class ReplayMemory():
     def get_sample_by_indices(self, idxs, set_size=32):
         data = self._get_transitions(idxs)
         data = data[:data.size // set_size * set_size]
-        states = torch.tensor(data['state'][:,self.history], dtype=torch.float32, device=self.device).div_(255).view(-1, set_size, 7056) # 84*84
-        states = states.permute(0, 2, 1)
-        actions = torch.tensor(np.copy(data['action'][:, self.history - 1]), dtype=torch.float32, device=self.device).view(-1, 1, set_size)
+        states = torch.tensor(data['state'][:,:self.history], dtype=torch.float32, device=self.device).div_(255)
+        next_states = torch.tensor(data['state'][:,1:self.history+1], dtype=torch.float32, device=self.device).div_(255)
+        # states = states.view(-1, set_size, 7056) # 84*84
+        # states = states.permute(0, 2, 1)
+        actions = torch.tensor(np.copy(data['action'][:, self.history - 1]), dtype=torch.float32, device=self.device)
+        actions = actions.view(-1, 1, set_size)
         rewards = torch.tensor(np.copy(data['reward'][:, self.history - 1:-1]), dtype=torch.float32, device=self.device)
         rewards = torch.matmul(rewards, self.n_step_scaling).view(-1, 1, set_size)
-        return states, actions, rewards
+        return states, actions, rewards, next_states
 
     # Set up internal state for iterator
     def __iter__(self):
@@ -256,7 +281,7 @@ class ReplayMemory():
 
     def update_value_by_indices(self, data_indices, value):
         for data_index in data_indices:
-            self.transitions.update_reward_by_index(data_index, value)
+            self.transitions.update_value_by_index(data_index, value)
 
 
     next = __next__  # Alias __next__ for Python 2 compatibility

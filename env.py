@@ -25,7 +25,7 @@ class Env():
         self.window = args.history_length  # Number of frames to concatenate
         self.state_buffer = deque([], maxlen=args.history_length)
         self.training = True  # Consistent with model training mode
-        self.env = gym.make("PongNoFrameskip-v4")
+        self.env = gym.make(args.environment)
 
     def _get_state(self, state):
         # input state: numpy (160, 120, 3)

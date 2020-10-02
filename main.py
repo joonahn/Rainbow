@@ -25,7 +25,7 @@ parser.add_argument('--id', type=str, default='default', help='Experiment ID')
 parser.add_argument('--seed', type=int, default=123, help='Random seed')
 parser.add_argument('--disable-cuda', action='store_true', help='Disable CUDA')
 # parser.add_argument('--game', type=str, default='space_invaders', choices=atari_py.list_games(), help='ATARI game')
-parser.add_argument('--T-max', type=int, default=int(50e6), metavar='STEPS', help='Number of training steps (4x number of frames)')
+parser.add_argument('--T-max', type=int, default=int(1e6), metavar='STEPS', help='Number of training steps (4x number of frames)')
 parser.add_argument('--max-episode-length', type=int, default=int(108e3), metavar='LENGTH', help='Max episode length in game frames (0 to disable)')
 parser.add_argument('--history-length', type=int, default=4, metavar='T', help='Number of consecutive states processed')
 parser.add_argument('--architecture', type=str, default='canonical', choices=['canonical', 'data-efficient'], metavar='ARCH', help='Network architecture')
@@ -58,11 +58,15 @@ parser.add_argument('--enable-cudnn', action='store_true', help='Enable cuDNN (f
 parser.add_argument('--checkpoint-interval', default=0, help='How often to checkpoint the model, defaults to 0 (never checkpoint)')
 parser.add_argument('--memory', help='Path to save/load the memory from')
 parser.add_argument('--disable-bzip-memory', action='store_true', help='Don\'t zip the memory file. Not recommended (zipping is a bit slower and much, much smaller)')
-parser.add_argument('--priority-activation', type=str, default='exponential', choices=['exponential', 'sigmoid'], help='Activation function used to calculate priority')
+parser.add_argument('--priority-activation', type=str, default='sigmoid', choices=['exponential', 'sigmoid', 'relu'], help='Activation function used to calculate priority')
+parser.add_argument('--environment', type=str, default='PongNoFrameskip-v4', help='Environment to play')
+parser.add_argument('--eviction', action='store_true', help='Enable Bad Data Eviction')
+parser.add_argument('--cnn', action='store_true', help='Enable CNN feature extraction')
+parser.add_argument('--wandb-group', type=str, default=None, help='Wandb group name(shared within the group)')
 
 # Setup
 args = parser.parse_args()
-wandb.init(config=args)
+wandb.init(config=args, group=args.wandb_group)
 
 print(' ' * 26 + 'Options')
 for k, v in vars(args).items():
@@ -113,7 +117,7 @@ action_space = env.action_space()
 dqn = Agent(args, env)
 
 # pointnet
-tran_eval = TransitionEvaluator(args)
+tran_eval = TransitionEvaluator(args, dqn)
 
 # If a model is provided, and evaluate is fale, presumably we want to resume, so try to load memory
 if args.model is not None and not args.evaluate:
@@ -138,7 +142,7 @@ while T < args.evaluation_size:
         state, done = env.reset(), False
 
     next_state, _, done = env.step(np.random.randint(0, action_space))
-    val_mem.append(state, -1, 0.0, done, -1)
+    val_mem.append(state, -1, 0.0, done)
     state = next_state
     T += 1
 
@@ -174,7 +178,7 @@ else:
         next_state, reward, done = env.step(action)  # Step
         if args.reward_clip > 0:
             reward = max(min(reward, args.reward_clip), -args.reward_clip)  # Clip rewards
-        mem.append(state, action, reward, done, epi_id)  # Append transition to memory
+        mem.append(state, action, reward, done)  # Append transition to memory
         epi_reward += reward
 
         # Train and test

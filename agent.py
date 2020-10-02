@@ -97,6 +97,8 @@ class Agent():
         clip_grad_norm_(self.online_net.parameters(), self.norm_clip)  # Clip gradients by L2 norm
         self.optimiser.step()
 
+        del states, actions, returns, next_states
+        torch.cuda.empty_cache()
         # mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
         return data_idxs
 
