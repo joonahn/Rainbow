@@ -160,9 +160,10 @@ class SegmentTree():
 
     def evict(self, count):
         value = self.sum_tree[self.tree_start:]
-        value[value == 0.0] = np.inf
-        evict_targets = np.argsort(value)[:count] + self.tree_start
+        zero_mask = (value == 0.0).astype(np.float32) * 1e38
+        evict_targets = np.argsort(value + zero_mask)[:count] + self.tree_start
         self.evict_by_indices(evict_targets)
+        del zero_mask
 
 class ReplayMemory():
     def __init__(self, args, capacity):
@@ -284,5 +285,7 @@ class ReplayMemory():
         for data_index in data_indices:
             self.transitions.update_value_by_index(data_index, value)
 
+    def evict(self, count):
+        self.transitions.evict(count)
 
     next = __next__  # Alias __next__ for Python 2 compatibility

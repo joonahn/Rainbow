@@ -60,9 +60,12 @@ parser.add_argument('--memory', help='Path to save/load the memory from')
 parser.add_argument('--disable-bzip-memory', action='store_true', help='Don\'t zip the memory file. Not recommended (zipping is a bit slower and much, much smaller)')
 parser.add_argument('--priority-activation', type=str, default='sigmoid', choices=['exponential', 'sigmoid', 'relu'], help='Activation function used to calculate priority')
 parser.add_argument('--environment', type=str, default='PongNoFrameskip-v4', help='Environment to play')
-parser.add_argument('--eviction', action='store_true', help='Enable Bad Data Eviction')
 parser.add_argument('--cnn', action='store_true', help='Enable CNN feature extraction')
 parser.add_argument('--wandb-group', type=str, default=None, help='Wandb group name(shared within the group)')
+parser.add_argument('--eviction', action='store_true', help='Enable Bad Data Eviction')
+parser.add_argument('--evict-start', type=int, default=int(1e6 * 0.1), metavar='N', help='Number of transitions to use for eviction')
+parser.add_argument('--evict-interval', type=int, default=int(1e5), metavar='N', help='Number of transitions to use for eviction')
+parser.add_argument('--evict-ratio', type=float, default=0.1, help='Eviction ratio')
 
 # Setup
 args = parser.parse_args()
@@ -199,6 +202,10 @@ else:
                 # If memory path provided, save it
                 if args.memory is not None:
                     save_memory(mem, args.memory, args.disable_bzip_memory)
+
+            # Eviction
+            if args.eviction and T >= args.evict_start and T % args.evict_interval == 0:
+                mem.evict(int(args.memory_capacity * args.evict_ratio))
 
             # Update target network
             if T % args.target_update == 0:
