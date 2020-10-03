@@ -44,6 +44,7 @@ class Agent():
             param.requires_grad = False
 
         self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
+        self.priority_alg = args.priority_algorithm
 
     # Resets noisy weights in all linear layers (of online net only)
     def reset_noise(self):
@@ -99,7 +100,8 @@ class Agent():
 
         del states, actions, returns, next_states
         torch.cuda.empty_cache()
-        # mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
+        if self.priority_alg == "per":
+            mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
         return data_idxs
 
     def update_target_net(self):

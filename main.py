@@ -66,6 +66,7 @@ parser.add_argument('--eviction', action='store_true', help='Enable Bad Data Evi
 parser.add_argument('--evict-start', type=int, default=int(1e6 * 0.1), metavar='N', help='Number of transitions to use for eviction')
 parser.add_argument('--evict-interval', type=int, default=int(1e5), metavar='N', help='Number of transitions to use for eviction')
 parser.add_argument('--evict-ratio', type=float, default=0.1, help='Eviction ratio')
+parser.add_argument('--priority-algorithm', type=str, default='pointnet', choices=['pointnet', 'per', 'none'], help='Wandb group name(shared within the group)')
 
 # Setup
 args = parser.parse_args()
@@ -169,8 +170,9 @@ else:
                     selected_epi_transition = np.random.choice(epi_transition, 4096)
                 else:
                     selected_epi_transition = epi_transition
-                tran_eval.learn(selected_epi_transition, delta_reward, mem)
-                tran_eval.update_mem_priority(selected_epi_transition, mem)
+                if args.priority_algorithm == "pointnet":
+                    tran_eval.learn(selected_epi_transition, delta_reward, mem)
+                    tran_eval.update_mem_priority(selected_epi_transition, mem)
             prev_epi_reward = epi_reward
             state, done, epi_id, epi_reward, epi_transition = env.reset(), False, epi_id + 1, 0.0, []
 
