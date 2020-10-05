@@ -165,6 +165,18 @@ class SegmentTree():
         self.evict_by_indices(evict_targets)
         del zero_mask
 
+    def get_n_lowest_transitions(self, count):
+        value = self.sum_tree[self.tree_start:]
+        zero_mask = (value == 0.0).astype(np.float32) * 1e38
+        targets = np.argsort(value + zero_mask)[:count]
+        del zero_mask
+        return self.data[targets], value[targets]
+
+    def get_n_highest_transitions(self, count):
+        value = self.sum_tree[self.tree_start:]
+        targets = np.argsort(-(value))[:count]
+        return self.data[targets], value[targets]
+
 class ReplayMemory():
     def __init__(self, args, capacity):
         self.device = args.device
@@ -287,5 +299,12 @@ class ReplayMemory():
 
     def evict(self, count):
         self.transitions.evict(count)
+
+    def get_lowesthighest_images(self, count):
+        lowest, low_val = self.transitions.get_n_lowest_transitions(count)
+        highest, high_val = self.transitions.get_n_highest_transitions(count)
+        lowest = lowest['state']
+        highest = highest['state']
+        return lowest, highest, low_val, high_val
 
     next = __next__  # Alias __next__ for Python 2 compatibility

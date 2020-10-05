@@ -96,3 +96,5 @@ ENV/
 
 # wandb
 wandb/
+*.gif
+*.png

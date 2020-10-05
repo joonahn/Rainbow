@@ -17,7 +17,8 @@ from env import Env
 from memory import ReplayMemory
 from test import test
 import wandb
-
+import imageio
+import matplotlib.pyplot as plt
 
 # Note that hyperparameters may originally be reported in ATARI game frames instead of agent steps
 parser = argparse.ArgumentParser(description='Rainbow')
@@ -67,6 +68,7 @@ parser.add_argument('--evict-start', type=int, default=int(1e6 * 0.1), metavar='
 parser.add_argument('--evict-interval', type=int, default=int(1e5), metavar='N', help='Number of transitions to use for eviction')
 parser.add_argument('--evict-ratio', type=float, default=0.1, help='Eviction ratio')
 parser.add_argument('--priority-algorithm', type=str, default='pointnet', choices=['pointnet', 'per', 'none'], help='Wandb group name(shared within the group)')
+parser.add_argument('--save-highlowimgs', action='store_true', help='Enable saving images with high/low priorities')
 
 # Setup
 args = parser.parse_args()
@@ -110,6 +112,17 @@ def save_memory(memory, memory_path, disable_bzip):
     else:
         with bz2.open(memory_path, 'wb') as zipped_pickle_file:
             pickle.dump(memory, zipped_pickle_file)
+
+def save_states_to_gif(states, priorities, fname):
+    states = states[:, :args.history_length]
+    states = states.reshape(-1, 84, 84)
+    priorities = priorities.reshape(-1)
+    with imageio.get_writer(fname, mode='I', duration=0.5) as writer:
+        for i in range(states.shape[0]):
+            plt.imshow(states[i])
+            plt.title("idx: " + str(i // 4) + "/priority: " + str(priorities[i//4]))
+            plt.savefig("tmp.png")
+            writer.append_data(imageio.imread("tmp.png"))
 
 
 # Environment
@@ -218,5 +231,13 @@ else:
                 dqn.save(results_dir, 'checkpoint.pth')
 
         state = next_state
+    # place high-low sample & save gifs
+    lowest_state, highest_state, low_val, high_val = mem.get_lowesthighest_images(5)
+    save_states_to_gif(lowest_state, low_val, "low.gif")
+    save_states_to_gif(highest_state, high_val, "high.gif")
+    wandb.log({"low_img": wandb.Video("low.gif", fps=2, format="gif"), "high_img": wandb.Video("high.gif", fps=2, format="gif")})
+
+
+
 
 env.close()
