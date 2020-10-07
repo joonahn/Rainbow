@@ -119,7 +119,7 @@ class PointNetCls(nn.Module):
     def __init__(self, k=1, feature_transform=False, enable_cnn=None, small_param=True):
         super(PointNetCls, self).__init__()
         self.feature_transform = feature_transform
-        self.feat = PointNetfeat(enable_cnn)
+        self.feat = PointNetfeat(enable_cnn, small_param)
         if small_param:
             self.fc1 = nn.Linear(128, 64)
             self.fc2 = nn.Linear(64, 32)
