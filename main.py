@@ -71,6 +71,7 @@ parser.add_argument('--priority-algorithm', type=str, default='pointnet', choice
 parser.add_argument('--save-highlowimgs', action='store_true', help='Enable saving images with high/low priorities')
 parser.add_argument('--partition-size', type=int, default=32, help='Batch size')
 parser.add_argument('--interpolation', type=str, default='bilinear', choices=['bilinear', 'nearest'], help='Image interpolation method')
+parser.add_argument('--small', action='store_true', help='Run pointnet with reduced parameters')
 
 # Setup
 args = parser.parse_args()

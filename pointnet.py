@@ -9,7 +9,7 @@ class TransitionEvaluator:
     def __init__(self, args, agent=None):
         self.device = args.device
         self.batch_size = args.batch_size
-        self.pointnet = PointNetCls()
+        self.pointnet = PointNetCls(small_param=args.small)
         self.pointnet.cuda()
         self.optimizer = optim.Adam(self.pointnet.parameters(), lr=0.001, betas=(0.9, 0.999))
         self.history = args.history_length
@@ -79,18 +79,25 @@ class TransitionEvaluator:
         torch.cuda.empty_cache()
 
 class PointNetfeat(nn.Module):
-    def __init__(self, enable_cnn=None):
+    def __init__(self, enable_cnn=None, small_param=True):
         super(PointNetfeat, self).__init__()
         if enable_cnn:
             self.conv1 = torch.nn.Conv1d(7058, 128, 1)
         else:
             self.conv1 = torch.nn.Conv1d(6274, 128, 1)
         self.conv2 = torch.nn.Conv1d(128, 128, 1)
-        self.conv3 = torch.nn.Conv1d(128, 128, 1) # out_ch: 1024 -> 128 (10/7)
+        if small_param:
+            self.conv3 = torch.nn.Conv1d(128, 128, 1)
+        else:
+            self.conv3 = torch.nn.Conv1d(128, 1024, 1)
         self.bn1 = nn.BatchNorm1d(128)
         self.bn2 = nn.BatchNorm1d(128)
-        self.bn3 = nn.BatchNorm1d(128) # 1024 -> 128(10/7)
+        if small_param:
+            self.bn3 = nn.BatchNorm1d(128)
+        else:
+            self.bn3 = nn.BatchNorm1d(1024)
         self.enable_cnn = enable_cnn
+        self.small_param = small_param
 
     def forward(self, x):
 
@@ -102,17 +109,25 @@ class PointNetfeat(nn.Module):
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
         x = torch.max(x, 2, keepdim=True)[0]
-        x = x.view(-1, 128) # 1024 -> 128(10/7)
+        if self.small_param:
+            x = x.view(-1, 128)
+        else:
+            x = x.view(-1, 1024)
         return x
 
 class PointNetCls(nn.Module):
-    def __init__(self, k=1, feature_transform=False, enable_cnn=None):
+    def __init__(self, k=1, feature_transform=False, enable_cnn=None, small_param=True):
         super(PointNetCls, self).__init__()
         self.feature_transform = feature_transform
         self.feat = PointNetfeat(enable_cnn)
-        self.fc1 = nn.Linear(128, 64) # (1024, 512) -> (128, 64) (10/7)
-        self.fc2 = nn.Linear(64, 32) # (512, 256) -> (64, 32) (10/7)
-        self.fc3 = nn.Linear(32, k) # (256, k) -> (32, k) (10/7)
+        if small_param:
+            self.fc1 = nn.Linear(128, 64)
+            self.fc2 = nn.Linear(64, 32)
+            self.fc3 = nn.Linear(32, k)
+        else:
+            self.fc1 = nn.Linear(1024, 512)
+            self.fc2 = nn.Linear(512, 256)
+            self.fc3 = nn.Linear(256, k)
         self.dropout = nn.Dropout(p=0.3)
         self.relu = nn.ReLU()
 
