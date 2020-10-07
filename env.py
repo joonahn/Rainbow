@@ -26,6 +26,7 @@ class Env():
         self.state_buffer = deque([], maxlen=args.history_length)
         self.training = True  # Consistent with model training mode
         self.env = gym.make(args.environment)
+        self.interpolation = args.interpolation
 
     def _get_state(self, state):
         # input state: numpy (160, 120, 3)
@@ -33,7 +34,7 @@ class Env():
         state = torch.tensor(state, dtype=torch.float32, device=self.device)
         state = state.unsqueeze(0)
         state = state.unsqueeze(0)
-        state = torch.nn.functional.interpolate(state, size=(84, 84))
+        state = torch.nn.functional.interpolate(state, size=(84, 84), mode=self.interpolation)
         state = state.squeeze(0)
         state = state.squeeze(0)
         # state = cv2.resize(self.ale.getScreenGrayscale(), (84, 84), interpolation=cv2.INTER_LINEAR)

@@ -69,6 +69,8 @@ parser.add_argument('--evict-interval', type=int, default=int(1e5), metavar='N',
 parser.add_argument('--evict-ratio', type=float, default=0.1, help='Eviction ratio')
 parser.add_argument('--priority-algorithm', type=str, default='pointnet', choices=['pointnet', 'per', 'none'], help='Wandb group name(shared within the group)')
 parser.add_argument('--save-highlowimgs', action='store_true', help='Enable saving images with high/low priorities')
+parser.add_argument('--partition-size', type=int, default=32, help='Batch size')
+parser.add_argument('--interpolation', type=str, default='bilinear', choices=['bilinear', 'nearest'], help='Image interpolation method')
 
 # Setup
 args = parser.parse_args()

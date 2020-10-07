@@ -191,6 +191,9 @@ class ReplayMemory():
         self.transitions = SegmentTree(capacity)  # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
         self.buffer = collections.deque()
         self.current_idx = 0
+        self.partition_size = args.partition_size
+        self.partition_cnt = capacity // self.partition_size
+        self.prev_dist = np.zeros((self.partition_cnt,))
 
     def append(self, state, action, reward, terminal):
         self.buffer.append((state, action, reward, terminal))
@@ -306,5 +309,9 @@ class ReplayMemory():
         lowest = lowest['state']
         highest = highest['state']
         return lowest, highest, low_val, high_val
+
+    def calculate_kl_divergence(self):
+        partition_cnt = self.capacity // self.partition_size
+
 
     next = __next__  # Alias __next__ for Python 2 compatibility

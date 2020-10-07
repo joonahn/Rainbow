@@ -86,10 +86,10 @@ class PointNetfeat(nn.Module):
         else:
             self.conv1 = torch.nn.Conv1d(6274, 128, 1)
         self.conv2 = torch.nn.Conv1d(128, 128, 1)
-        self.conv3 = torch.nn.Conv1d(128, 1024, 1)
+        self.conv3 = torch.nn.Conv1d(128, 128, 1) # out_ch: 1024 -> 128 (10/7)
         self.bn1 = nn.BatchNorm1d(128)
         self.bn2 = nn.BatchNorm1d(128)
-        self.bn3 = nn.BatchNorm1d(1024)
+        self.bn3 = nn.BatchNorm1d(128) # 1024 -> 128(10/7)
         self.enable_cnn = enable_cnn
 
     def forward(self, x):
@@ -102,7 +102,7 @@ class PointNetfeat(nn.Module):
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
         x = torch.max(x, 2, keepdim=True)[0]
-        x = x.view(-1, 1024)
+        x = x.view(-1, 128) # 1024 -> 128(10/7)
         return x
 
 class PointNetCls(nn.Module):
@@ -110,17 +110,15 @@ class PointNetCls(nn.Module):
         super(PointNetCls, self).__init__()
         self.feature_transform = feature_transform
         self.feat = PointNetfeat(enable_cnn)
-        self.fc1 = nn.Linear(1024, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, k)
+        self.fc1 = nn.Linear(128, 64) # (1024, 512) -> (128, 64) (10/7)
+        self.fc2 = nn.Linear(64, 32) # (512, 256) -> (64, 32) (10/7)
+        self.fc3 = nn.Linear(32, k) # (256, k) -> (32, k) (10/7)
         self.dropout = nn.Dropout(p=0.3)
-        self.bn1 = nn.BatchNorm1d(512)
-        self.bn2 = nn.BatchNorm1d(256)
         self.relu = nn.ReLU()
 
     def forward(self, x):
         x = self.feat(x)
-        x = F.relu(self.bn1(self.fc1(x)))
-        x = F.relu(self.bn2(self.dropout(self.fc2(x))))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.dropout(self.fc2(x)))
         x = self.fc3(x)
         return x
