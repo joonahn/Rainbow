@@ -69,9 +69,10 @@ parser.add_argument('--evict-interval', type=int, default=int(1e5), metavar='N',
 parser.add_argument('--evict-ratio', type=float, default=0.1, help='Eviction ratio')
 parser.add_argument('--priority-algorithm', type=str, default='pointnet', choices=['pointnet', 'per', 'none'], help='Wandb group name(shared within the group)')
 parser.add_argument('--save-highlowimgs', action='store_true', help='Enable saving images with high/low priorities')
-parser.add_argument('--partition-size', type=int, default=32, help='Batch size')
+parser.add_argument('--partition-size', type=int, default=32, help='partition size')
 parser.add_argument('--interpolation', type=str, default='bilinear', choices=['bilinear', 'nearest'], help='Image interpolation method')
 parser.add_argument('--small', action='store_true', help='Run pointnet with reduced parameters')
+parser.add_argument('--pointnet-updatesize', type=int, default=4096, help='Pointnet update size')
 
 # Setup
 args = parser.parse_args()
@@ -182,8 +183,8 @@ else:
                 prev_epi_reward = epi_reward
             else:
                 delta_reward = epi_reward - prev_epi_reward
-                if len(epi_transition) > 4096:
-                    selected_epi_transition = np.random.choice(epi_transition, 4096)
+                if len(epi_transition) > args.pointnet_updatesize:
+                    selected_epi_transition = np.random.choice(epi_transition, args.pointnet_updatesize)
                 else:
                     selected_epi_transition = epi_transition
                 if args.priority_algorithm == "pointnet":
@@ -235,10 +236,11 @@ else:
 
         state = next_state
     # place high-low sample & save gifs
-    lowest_state, highest_state, low_val, high_val = mem.get_lowesthighest_images(5)
-    save_states_to_gif(lowest_state, low_val, "low.gif")
-    save_states_to_gif(highest_state, high_val, "high.gif")
-    wandb.log({"low_img": wandb.Video("low.gif", fps=2, format="gif"), "high_img": wandb.Video("high.gif", fps=2, format="gif")})
+    if args.save_highlowimgs:
+        lowest_state, highest_state, low_val, high_val = mem.get_lowesthighest_images(5)
+        save_states_to_gif(lowest_state, low_val, "low.gif")
+        save_states_to_gif(highest_state, high_val, "high.gif")
+        wandb.log({"low_img": wandb.Video("low.gif", fps=2, format="gif"), "high_img": wandb.Video("high.gif", fps=2, format="gif")})
 
 
 
