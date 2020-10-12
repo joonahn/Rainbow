@@ -313,5 +313,118 @@ class ReplayMemory():
     def calculate_kl_divergence(self):
         partition_cnt = self.capacity // self.partition_size
 
-
     next = __next__  # Alias __next__ for Python 2 compatibility
+
+class PartitionedReplayMemory:
+    def __init__(self, args, capacity, partition_size):
+        self.device = args.device
+        self.capacity = (capacity // partition_size) * partition_size
+        self.history = args.history_length
+        self.discount = args.discount
+        self.n = args.multi_step
+        self.priority_weight = args.priority_weight  # Initial importance sampling weight β, annealed to 1 over course of training
+        self.priority_exponent = args.priority_exponent
+        self.t = 0  # Internal episode timestep counter
+        self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32, device=self.device)  # Discount-scaling vector for n-step returns
+        self.buffer = collections.deque()
+        self.partition_buffer = collections.deque()
+        self.partition_cnt = capacity // partition_size
+        self.partition_size = partition_size
+        self.data = [None] * (self.partition_cnt)
+        self.filled_partition = np.zeros((self.partition_cnt,))
+        self.priorities = np.zeros((self.partition_cnt,))
+        self.current_idx = 0
+        self.evict_strategy = args.evict_strategy
+
+    def append(self, state, action, reward, terminal):
+        self.buffer.append((state, action, reward, terminal))
+        if len(self.buffer) >= 7:
+            # states.shape : (7, ?)
+            states = np.array([v[0][-1].mul(255).to(dtype=torch.uint8, device=torch.device('cpu')).numpy() for v in self.buffer])
+            actions = np.array([v[1] for v in self.buffer])
+            rewards = np.array([v[2] for v in self.buffer])
+            terminals = np.array([v[3] for v in self.buffer])
+            self.partition_buffer.append((self.t, states, actions, rewards, ~ terminals))  # Store new transition with maximum priority
+            if len(self.partition_buffer) >= self.partition_size:
+                # check fullness
+                if np.all(self.filled_partition == 1):
+                    self.evict(1)
+                target_idx = min(np.arange(len(self.data))[self.filled_partition == 0])
+                self.filled_partition[target_idx] = 1
+                self.priorities[target_idx] = max(1.0, np.max(self.priorities))
+                # states.shape: (partition_size, 7, ?)
+                ts = [v[0] for v in self.partition_buffer]
+                states = np.array([v[1] for v in self.partition_buffer])
+                actions = np.array([v[2] for v in self.partition_buffer])
+                rewards = np.array([v[3] for v in self.partition_buffer])
+                terminals = np.array([v[4] for v in self.partition_buffer])
+                self.data[target_idx] = (ts, states, actions, rewards, terminals)
+                self.partition_buffer.clear()
+            self.t = 0 if terminals[3].any() else self.t + 1  # Start new episodes with t = 0
+            self.buffer.popleft()
+
+    def sample(self, partition_cnt):
+        # check emptyness
+        if np.all(self.filled_partition == 0):
+            return []
+        # extract transitions
+        filled_idx = np.arange(self.partition_cnt)[self.filled_partition == 1]
+        filled_pri = self.priorities[self.filled_partition == 1] / sum(self.priorities[self.filled_partition == 1])
+        sampled_idx = np.random.choice(filled_idx, partition_cnt, p=filled_pri)
+        transitions = [item for idx in sampled_idx for item in self.data[idx]]
+
+        # s,a,r,s,nt
+        states = torch.tensor(transitions[1][:, :self.history], device=self.device, dtype=torch.float32).div_(255)
+        next_states = torch.tensor(transitions[1][:, self.n : self.n+self.history], device=self.device, dtype=torch.float32).div_(255)
+        actions = torch.tensor(np.copy(transitions[2][:, self.history - 1]), dtype=torch.int64, device=self.device)
+        rewards = torch.tensor(np.copy(transitions[3][:, self.history - 1:-1]), dtype=torch.float32, device=self.device)
+        R = torch.matmul(rewards, self.n_step_scaling)
+        nonterminals = torch.tensor(np.expand_dims(transitions[4][:, self.history + self.n - 1], axis=1), dtype=torch.float32, device=self.device)
+
+        # weight calculation
+        p_total = np.sum(self.priorities[self.filled_partition == 1])
+        transition_priorities = self.priorities[sampled_idx]
+        transition_priorities = transition_priorities / p_total
+        weights = torch.tensor((self.capacity * transition_priorities) ** -self.priority_weight, dtype=torch.float32, device=self.device)
+        return sampled_idx, states, actions, R, next_states, nonterminals, weights, sampled_idx
+
+    def get_sample_by_indices(self, idxs):
+        transitions = self.data[idxs]
+
+        # s,a,r,s,nt
+        states = torch.tensor(transitions[1][:, :self.history], device=self.device, dtype=torch.float32).div_(255)
+        next_states = torch.tensor(transitions[1, self.n : self.n+self.history], device=self.device, dtype=torch.float32).div_(255)
+        actions = torch.tensor(np.copy(transitions[2]), dtype=torch.int64, device=self.device)
+        rewards = torch.tensor(np.copy(transitions[3]), dtype=torch.float32, device=self.device)
+        R = torch.matmul(rewards, self.n_step_scaling)
+
+        return states, actions, R, next_states
+
+    def update_priorities(self, partition_idxs, priorities):
+        for partition_idx, priority in zip(partition_idxs, priorities):
+            self.priorities[partition_idx] = priority
+
+    def evict(self, partition_cnt, *args):
+        for _ in range(partition_cnt):
+            # check emptyness
+            if np.all(self.filled_partition == 0):
+                continue
+            if self.evict_strategy == 'old':
+                target_idx = max(np.arange(len(self.data))[self.filled_partition == 1])
+                self.filled_partition[target_idx] = 0
+            elif self.evict_strategy == 'low_diff':
+                prev_priorities = args[0]
+                target_idx = np.argmax(np.abs(self.priorities - prev_priorities))
+                self.filled_partition[target_idx] = 0
+                
+
+    def get_lowesthighest_images(self, count):
+        zero_mask = (self.filled_partition == 0).astype(np.float32) * 1e38
+        low_idx = np.argmin(self.priorities + zero_mask)
+        low_stt = self.data[low_idx][:count]
+        low_val = self.priorities[low_idx]
+
+        high_idx = np.argmin(zero_mask - self.priorities)
+        high_stt = self.data[high_idx][:count]
+        high_val = self.priorities[high_idx]
+        return low_stt, high_stt, [low_val] * count, [high_val] * count

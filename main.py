@@ -14,7 +14,7 @@ from tqdm import trange
 from agent import Agent
 from pointnet import TransitionEvaluator
 from env import Env
-from memory import ReplayMemory
+from memory import ReplayMemory, PartitionedReplayMemory
 from test import test
 import wandb
 import imageio
@@ -67,9 +67,11 @@ parser.add_argument('--eviction', action='store_true', help='Enable Bad Data Evi
 parser.add_argument('--evict-start', type=int, default=int(1e6 * 0.1), metavar='N', help='Number of transitions to use for eviction')
 parser.add_argument('--evict-interval', type=int, default=int(1e5), metavar='N', help='Number of transitions to use for eviction')
 parser.add_argument('--evict-ratio', type=float, default=0.1, help='Eviction ratio')
+parser.add_argument('--evict-strategy', type=str, default='old', choices=['old', 'lowdiff'], help='Eviction Strategy')
 parser.add_argument('--priority-algorithm', type=str, default='pointnet', choices=['pointnet', 'per', 'none'], help='Wandb group name(shared within the group)')
 parser.add_argument('--save-highlowimgs', action='store_true', help='Enable saving images with high/low priorities')
 parser.add_argument('--partition-size', type=int, default=32, help='partition size')
+parser.add_argument('--partition', action='store_true', help='Enable partitioned memory buffer')
 parser.add_argument('--interpolation', type=str, default='bilinear', choices=['bilinear', 'nearest'], help='Image interpolation method')
 parser.add_argument('--small', action='store_true', help='Run pointnet with reduced parameters')
 parser.add_argument('--pointnet-updatesize', type=int, default=4096, help='Pointnet update size')
@@ -150,7 +152,7 @@ if args.model is not None and not args.evaluate:
     mem = load_memory(args.memory, args.disable_bzip_memory)
 
 else:
-    mem = ReplayMemory(args, args.memory_capacity)
+    mem = PartitionedReplayMemory(args, args.memory_capacity, args.partition_size)
 
 priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
@@ -174,7 +176,7 @@ if args.evaluate:
 else:
     # Training loop
     dqn.train()
-    T, done, epi_id, epi_reward, epi_transition = 0, True, 0, 0.0, []
+    T, done, epi_id, epi_reward, epi_transition, prev_priorities = 0, True, 0, 0.0, [], None
     prev_epi_reward = None
     for T in trange(1, args.T_max + 1):
         if done:
@@ -191,7 +193,7 @@ else:
                     tran_eval.learn(selected_epi_transition, delta_reward, mem)
                     tran_eval.update_mem_priority(selected_epi_transition, mem)
             prev_epi_reward = epi_reward
-            state, done, epi_id, epi_reward, epi_transition = env.reset(), False, epi_id + 1, 0.0, []
+            state, done, epi_id, epi_reward, epi_transition, prev_priorities = env.reset(), False, epi_id + 1, 0.0, [], None
 
         if T % args.replay_frequency == 0:
             dqn.reset_noise()  # Draw a new set of noisy weights
@@ -224,7 +226,7 @@ else:
 
             # Eviction
             if args.eviction and T >= args.evict_start and T % args.evict_interval == 0:
-                mem.evict(int(args.memory_capacity * args.evict_ratio))
+                mem.evict(int(args.memory_capacity * args.evict_ratio // args.partition_size), prev_priorities)
 
             # Update target network
             if T % args.target_update == 0:

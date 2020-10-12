@@ -66,15 +66,15 @@ class TransitionEvaluator:
         s, a, r, next_s = mem.get_sample_by_indices(np.array(epi_transitions))
         data = self.extract_feats(s, a, r, next_s)
         predict = self.pointnet(data).detach().cpu().numpy()
-        for i in range(data.size()[0]):
-            if self.priority_activation == 'sigmoid':
-                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], 1 / (1 + np.exp(-predict[i])))
-            elif self.priority_activation == 'exponential':
-                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], np.exp(predict[i]))
-            elif self.priority_activation == 'relu':
-                mem.update_value_by_indices(epi_transitions[i*self.batch_size:(i+1) * self.batch_size], np.maximum(np.zeros(predict[i].shape),predict[i]))
-            else:
-                raise Exception("wrong priority activation: " + self.priority_activation)
+        if self.priority_activation == 'sigmoid':
+            priorities = 1 / (1 + np.exp(-predict))
+        elif self.priority_activation == 'exponential':
+            priorities = np.exp(predict)
+        elif self.priority_activation == 'relu':
+            priorities = np.maximum(np.zeros(predict.shape),predict)
+        else:
+            raise Exception("wrong priority activation: " + self.priority_activation)
+        mem.update_value_by_indices(epi_transitions, priorities)
         del s, a, r, next_s, data
         torch.cuda.empty_cache()
 

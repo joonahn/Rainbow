@@ -45,6 +45,7 @@ class Agent():
 
         self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
         self.priority_alg = args.priority_algorithm
+        self.partition = args.partition
 
     # Resets noisy weights in all linear layers (of online net only)
     def reset_noise(self):
