@@ -74,7 +74,7 @@ class TransitionEvaluator:
             priorities = np.maximum(np.zeros(predict.shape),predict)
         else:
             raise Exception("wrong priority activation: " + self.priority_activation)
-        mem.update_value_by_indices(epi_transitions, priorities)
+        mem.update_priorities(epi_transitions, priorities)
         del s, a, r, next_s, data
         torch.cuda.empty_cache()
 

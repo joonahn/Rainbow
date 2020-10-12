@@ -389,14 +389,18 @@ class PartitionedReplayMemory:
         return sampled_idx, states, actions, R, next_states, nonterminals, weights, sampled_idx
 
     def get_sample_by_indices(self, idxs):
-        transitions = self.data[idxs]
+        transitions = [item for idx in idxs for item in self.data[idx]]
 
         # s,a,r,s,nt
         states = torch.tensor(transitions[1][:, :self.history], device=self.device, dtype=torch.float32).div_(255)
-        next_states = torch.tensor(transitions[1, self.n : self.n+self.history], device=self.device, dtype=torch.float32).div_(255)
-        actions = torch.tensor(np.copy(transitions[2]), dtype=torch.int64, device=self.device)
-        rewards = torch.tensor(np.copy(transitions[3]), dtype=torch.float32, device=self.device)
+        next_states = torch.tensor(transitions[1][:, self.n : self.n+self.history], device=self.device, dtype=torch.float32).div_(255)
+        actions = torch.tensor(np.copy(transitions[2][:, self.history - 1]), dtype=torch.float32, device=self.device)
+        rewards = torch.tensor(np.copy(transitions[3][:, self.history - 1:-1]), dtype=torch.float32, device=self.device)
         R = torch.matmul(rewards, self.n_step_scaling)
+
+        # reshape to fit pointnet
+        actions = actions.view(-1, 1, self.partition_size)
+        R = R.view(-1, 1, self.partition_size)
 
         return states, actions, R, next_states
 
@@ -421,10 +425,10 @@ class PartitionedReplayMemory:
     def get_lowesthighest_images(self, count):
         zero_mask = (self.filled_partition == 0).astype(np.float32) * 1e38
         low_idx = np.argmin(self.priorities + zero_mask)
-        low_stt = self.data[low_idx][:count]
+        low_stt = self.data[low_idx][1][:count]
         low_val = self.priorities[low_idx]
 
         high_idx = np.argmin(zero_mask - self.priorities)
-        high_stt = self.data[high_idx][:count]
+        high_stt = self.data[high_idx][1][:count]
         high_val = self.priorities[high_idx]
-        return low_stt, high_stt, [low_val] * count, [high_val] * count
+        return low_stt, high_stt, np.array([low_val] * count), np.array([high_val] * count)
