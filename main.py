@@ -73,6 +73,7 @@ parser.add_argument('--partition-size', type=int, default=32, help='partition si
 parser.add_argument('--interpolation', type=str, default='bilinear', choices=['bilinear', 'nearest'], help='Image interpolation method')
 parser.add_argument('--small', action='store_true', help='Run pointnet with reduced parameters')
 parser.add_argument('--pointnet-updatesize', type=int, default=4096, help='Pointnet update size')
+parser.add_argument('--distillation', type=str, default=None, choices=['high', 'low'], help='distillation target set')
 
 # Setup
 args = parser.parse_args()
@@ -112,10 +113,10 @@ def load_memory(memory_path, disable_bzip):
 def save_memory(memory, memory_path, disable_bzip):
     if disable_bzip:
         with open(memory_path, 'wb') as pickle_file:
-            pickle.dump(memory, pickle_file)
+            pickle.dump(memory, pickle_file, protocol=4)
     else:
         with bz2.open(memory_path, 'wb') as zipped_pickle_file:
-            pickle.dump(memory, zipped_pickle_file)
+            pickle.dump(memory, zipped_pickle_file, protocol=4)
 
 def save_states_to_gif(states, priorities, fname):
     states = states[:, :args.history_length]
@@ -141,13 +142,20 @@ dqn = Agent(args, env)
 tran_eval = TransitionEvaluator(args, dqn)
 
 # If a model is provided, and evaluate is fale, presumably we want to resume, so try to load memory
-if args.model is not None and not args.evaluate:
+if (args.model is not None and not args.evaluate) or args.distillation:
     if not args.memory:
         raise ValueError('Cannot resume training without memory save path. Aborting...')
     elif not os.path.exists(args.memory):
         raise ValueError('Could not find memory file at {path}. Aborting...'.format(path=args.memory))
 
     mem = load_memory(args.memory, args.disable_bzip_memory)
+    # delete un-wanted data from memory & block memory update
+    if args.distillation == 'high':
+        mem.evict_by_ratio('low', 0.7)
+        # delete low-priority data
+    elif args.distillation == 'low':
+        mem.evict_by_ratio('high', 0.7)
+        # delete high-priority data
 
 else:
     mem = ReplayMemory(args, args.memory_capacity)
@@ -200,7 +208,8 @@ else:
         next_state, reward, done = env.step(action)  # Step
         if args.reward_clip > 0:
             reward = max(min(reward, args.reward_clip), -args.reward_clip)  # Clip rewards
-        mem.append(state, action, reward, done)  # Append transition to memory
+        if not args.distillation:
+            mem.append(state, action, reward, done)  # Append transition to memory
         epi_reward += reward
 
         # Train and test
@@ -218,9 +227,6 @@ else:
                 wandb.log({"step": T, "reward": avg_reward, "avg_q": avg_Q})
                 dqn.train()  # Set DQN (online network) back to training mode
 
-                # If memory path provided, save it
-                if args.memory is not None:
-                    save_memory(mem, args.memory, args.disable_bzip_memory)
 
             # Eviction
             if args.eviction and T >= args.evict_start and T % args.evict_interval == 0:
@@ -242,7 +248,8 @@ else:
         save_states_to_gif(highest_state, high_val, "high.gif")
         wandb.log({"low_img": wandb.Video("low.gif", fps=2, format="gif"), "high_img": wandb.Video("high.gif", fps=2, format="gif")})
 
-
-
+    # If memory path provided, save it
+    if args.memory is not None and args.distillation is None:
+        save_memory(mem, args.memory, args.disable_bzip_memory)
 
 env.close()

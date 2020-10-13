@@ -165,6 +165,21 @@ class SegmentTree():
         self.evict_by_indices(evict_targets)
         del zero_mask
 
+    def evict_by_ratio(self, evict_target, evict_ratio):
+        if self.full:
+            count = int(self.size * evict_ratio)
+        else:
+            count = int(self.index * evict_ratio)
+        value = self.sum_tree[self.tree_start:]
+        zero_mask = (value == 0.0).astype(np.float32) * 1e38
+        if evict_target == 'low':
+            evict_targets = np.argsort(value + zero_mask)[:count] + self.tree_start
+        elif evict_target == 'high':
+            evict_targets = np.argsort(-value + zero_mask)[:count] + self.tree_start
+        self.evict_by_indices(evict_targets)
+        print("evicted", count, "transitions")
+        del zero_mask
+
     def get_n_lowest_transitions(self, count):
         value = self.sum_tree[self.tree_start:]
         zero_mask = (value == 0.0).astype(np.float32) * 1e38
@@ -302,6 +317,9 @@ class ReplayMemory():
 
     def evict(self, count):
         self.transitions.evict(count)
+
+    def evict_by_ratio(self, evict_target, evict_ratio):
+        self.transitions.evict_by_ratio(evict_target, evict_ratio)
 
     def get_lowesthighest_images(self, count):
         lowest, low_val = self.transitions.get_n_lowest_transitions(count)
