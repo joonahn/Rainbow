@@ -110,10 +110,7 @@ class PointNetfeat(nn.Module):
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
         x = torch.max(x, 2, keepdim=True)[0]
-        if self.small_param:
-            x = x.view(-1, 128)
-        else:
-            x = x.view(-1, 1024)
+        x = x.view(-1, 1024)
         return x
 
 class PointNetCls(nn.Module):
@@ -121,14 +118,9 @@ class PointNetCls(nn.Module):
         super(PointNetCls, self).__init__()
         self.feature_transform = feature_transform
         self.feat = PointNetfeat(enable_cnn, small_param)
-        if small_param:
-            self.fc1 = nn.Linear(128, 64)
-            self.fc2 = nn.Linear(64, 32)
-            self.fc3 = nn.Linear(32, k)
-        else:
-            self.fc1 = nn.Linear(1024, 512)
-            self.fc2 = nn.Linear(512, 256)
-            self.fc3 = nn.Linear(256, k)
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, k)
         self.dropout = nn.Dropout(p=0.3)
         self.relu = nn.ReLU()
 
