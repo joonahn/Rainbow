@@ -190,8 +190,9 @@ else:
                 else:
                     selected_epi_transition = epi_transition
                 if args.priority_algorithm == "pointnet":
-                    tran_eval.learn(selected_epi_transition, delta_reward, mem)
+                    pointnet_loss = tran_eval.learn(selected_epi_transition, delta_reward, mem)
                     tran_eval.update_mem_priority(selected_epi_transition, mem)
+                    wandb.log({"pointnet_loss": pointnet_loss}, step=T)
             prev_epi_reward = epi_reward
             state, done, epi_id, epi_reward, epi_transition, prev_priorities = env.reset(), False, epi_id + 1, 0.0, [], None
 

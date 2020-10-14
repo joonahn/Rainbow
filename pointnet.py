@@ -57,6 +57,7 @@ class TransitionEvaluator:
         self.optimizer.step()
         del s, a, r, next_s, data
         torch.cuda.empty_cache()
+        return np.sum(loss.detach().cpu().numpy())
 
     def update_mem_priority(self, epi_transitions, mem):
         if len(epi_transitions) < self.batch_size:
