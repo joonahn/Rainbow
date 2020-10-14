@@ -87,16 +87,10 @@ class PointNetfeat(nn.Module):
         else:
             self.conv1 = torch.nn.Conv1d(6274, 128, 1)
         self.conv2 = torch.nn.Conv1d(128, 128, 1)
-        if small_param:
-            self.conv3 = torch.nn.Conv1d(128, 128, 1)
-        else:
-            self.conv3 = torch.nn.Conv1d(128, 1024, 1)
+        self.conv3 = torch.nn.Conv1d(128, 1024, 1)
         self.bn1 = nn.BatchNorm1d(128)
         self.bn2 = nn.BatchNorm1d(128)
-        if small_param:
-            self.bn3 = nn.BatchNorm1d(128)
-        else:
-            self.bn3 = nn.BatchNorm1d(1024)
+        self.bn3 = nn.BatchNorm1d(1024)
         self.enable_cnn = enable_cnn
         self.small_param = small_param
 
